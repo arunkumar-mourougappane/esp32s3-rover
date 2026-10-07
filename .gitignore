@@ -76,3 +76,6 @@ Testing/
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/extensions.json
+
+# Python
+__pycache__/
