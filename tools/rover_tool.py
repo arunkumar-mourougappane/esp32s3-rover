@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import math
 import os
 import platform
 import queue
@@ -123,6 +124,180 @@ async def watch(host: str):
             print(fmt_telemetry(json.loads(msg)))
 
 
+# ------------------------------------------------------------- visualization
+class Viz:
+    """Rover telemetry panels drawn on a tk Canvas (same views as the web dashboard):
+    heading, side tilt, rear tilt, g-meter, motors. Conventions match src/imu.h."""
+
+    PW, H = 150, 200
+    BG, GRID, DIM = "#0f1115", "#2a2f3a", "#8a93a6"
+    OK, WARN, BAD, ACC = "#3ddc84", "#ffb74d", "#ff5c5c", "#4da6ff"
+    G = 9.80665
+
+    def __init__(self, tk, parent):
+        import collections
+        self.c = tk.Canvas(parent, width=self.PW * 5, height=self.H, bg=self.BG,
+                           highlightthickness=0)
+        self.lin = [0.0, 0.0]
+        self.trail = collections.deque(maxlen=40)
+
+    # -- primitives
+    @staticmethod
+    def _rot(pts, deg):
+        a = math.radians(deg)
+        ca, sa = math.cos(a), math.sin(a)  # screen y is down, so +deg is clockwise
+        return [(x * ca - y * sa, x * sa + y * ca) for x, y in pts]
+
+    def _rotp(self, pts, deg, pv):
+        """Rotate pts about pivot pv."""
+        return [(x + pv[0], y + pv[1]) for x, y in
+                self._rot([(x - pv[0], y - pv[1]) for x, y in pts], deg)]
+
+    def _poly(self, pts, ox, oy, fill, outline="", width=2):
+        flat = [v for x, y in pts for v in (ox + x, oy + y)]
+        self.c.create_polygon(*flat, fill=fill, outline=outline, width=width)
+
+    def _circle(self, cx, cy, r, **kw):
+        self.c.create_oval(cx - r, cy - r, cx + r, cy + r, **kw)
+
+    def _text(self, x, y, t, color=None, size=9, bold=False, anchor="nw"):
+        self.c.create_text(x, y, text=t, fill=color or self.DIM, anchor=anchor,
+                           font=("Helvetica", size, "bold" if bold else "normal"))
+
+    def _tilt_color(self, a):
+        return self.BAD if abs(a) > 35 else self.WARN if abs(a) > 20 else self.OK
+
+    # -- panels
+    TIRE, RIM = "#2b2f3a", "#9aa3b5"
+    BODY, DECK = "#2a3b55", "#3f5a85"
+    LAMP, TAIL = "#ffe08a", "#ff5c5c"
+
+    def _heading(self, x0, yaw, left, right):
+        cx, cy, R = x0 + 75, 112, 64
+        self._text(x0 + 6, 4, "HEADING")
+        self._text(x0 + 6, 18, f"yaw {yaw:+.0f}\u00b0", self.OK, 11, True)
+        self._circle(cx, cy, R, outline=self.GRID)
+        for a in range(0, 360, 30):
+            t = math.radians(a + yaw)
+            r0 = R - (6 if a % 90 else 12)
+            self.c.create_line(cx + math.sin(t) * r0, cy - math.cos(t) * r0,
+                               cx + math.sin(t) * R, cy - math.cos(t) * R, fill=self.GRID)
+        t0 = math.radians(yaw)  # a left (CCW) turn moves the reference clockwise
+        self._text(cx + math.sin(t0) * (R + 9), cy - math.cos(t0) * (R + 9), "0\u00b0",
+                   self.ACC, 9, anchor="center")
+        # tyres with a speed fill (green forward, amber reverse)
+        for x1, v in ((-26, left), (18, right)):
+            self.c.create_rectangle(cx + x1, cy - 22, cx + x1 + 8, cy + 22, fill=self.TIRE,
+                                    outline=self.RIM)
+            for ty in range(-18, 22, 8):  # tread
+                self.c.create_line(cx + x1 + 1, cy + ty, cx + x1 + 7, cy + ty, fill="#444b5a")
+            ln = abs(v) * 20
+            col = self.OK if v >= 0 else self.WARN
+            if ln >= 1:
+                y1, y2 = (cy - ln, cy) if v >= 0 else (cy, cy + ln)
+                self.c.create_rectangle(cx + x1 + 2, y1, cx + x1 + 6, y2, fill=col, outline="")
+        self._poly([(-15, -24), (-11, -30), (11, -30), (15, -24), (15, 24), (11, 30), (-11, 30),
+                    (-15, 24)], cx, cy, self.BODY, self.ACC)
+        self._poly([(-9, -14), (9, -14), (9, 18), (-9, 18)], cx, cy, self.DECK, "", 0)
+        for lx_, ly_, col in ((-9, -27, self.LAMP), (9, -27, self.LAMP), (-9, 27, self.TAIL),
+                              (9, 27, self.TAIL)):
+            self._circle(cx + lx_, cy + ly_, 2.5, fill=col, outline="")
+        self._poly([(0, -46), (-6, -36), (6, -36)], cx, cy, self.ACC)  # heading arrow
+
+    def _wheel(self, ox, oy, deg, pv, wx, wy, r):
+        (px, py), = self._rotp([(wx, wy)], deg, pv)
+        self._circle(ox + px, oy + py, r, fill=self.TIRE, outline=self.RIM, width=2)
+        self._circle(ox + px, oy + py, r * 0.35, fill=self.RIM, outline="")
+
+    def _tilt(self, x0, angle, title, rear):
+        ox, oy = x0 + 75, 140
+        col = self._tilt_color(angle)
+        self._text(x0 + 6, 4, title)
+        self._text(x0 + 6, 18, f"{angle:+.1f}\u00b0", col, 11, True)
+        # ground with hatching, plus a dashed level reference
+        self.c.create_line(x0 + 8, oy, x0 + self.PW - 8, oy, fill="#555")
+        for gx in range(x0 + 12, x0 + self.PW - 8, 10):
+            self.c.create_line(gx, oy, gx - 4, oy + 5, fill="#3a3f4b")
+        deg = angle if rear else -angle  # side: nose-up is CCW; rear: left-side-up is CW
+        # pivot on the tyre that stays on the ground: rear tyre when nose-up, front when
+        # nose-down; for roll, the right tyre when left-side-up, else the left
+        pv = ((40 if angle > 0 else -40) if rear else (-28 if angle > 0 else 28), 0)
+        R = lambda pts: self._rotp(pts, deg, pv)  # noqa: E731
+        if rear:
+            chassis = [(-32, -24), (-28, -30), (28, -30), (32, -24), (32, -16), (28, -14),
+                       (-28, -14), (-32, -16)]
+            for x1, x2 in ((-46, -34), (34, 46)):  # tyres
+                self._poly(R([(x1, -22), (x2, -22), (x2, 0), (x1, 0)]), ox, oy, self.TIRE, self.RIM)
+            self._poly(R(chassis), ox, oy, self.BODY, col)
+            self._poly(R([(-20, -30), (-16, -40), (16, -40), (20, -30)]), ox, oy, self.DECK, col)
+            for sx in (-1, 1):
+                self._poly(R([(sx * 26 - 3, -26), (sx * 26 + 3, -26), (sx * 26 + 3, -20),
+                              (sx * 26 - 3, -20)]), ox, oy, self.TAIL)
+            (mx, my), (bx, by) = R([(0, -50)]) + R([(0, -40)])
+            self.c.create_line(ox + bx, oy + by, ox + mx, oy + my, fill=self.RIM, width=2)
+            self._circle(ox + mx, oy + my, 3, fill=col, outline="")
+        else:
+            chassis = [(-46, -24), (-42, -30), (42, -30), (46, -24), (46, -16), (42, -14),
+                       (-42, -14), (-46, -16)]
+            self._poly(R(chassis), ox, oy, self.BODY, col)
+            self._poly(R([(-24, -30), (-19, -40), (15, -40), (20, -30)]), ox, oy, self.DECK, col)
+            self._poly(R([(44, -26), (48, -26), (48, -20), (44, -20)]), ox, oy, self.LAMP)
+            self._poly(R([(-48, -26), (-44, -26), (-44, -20), (-48, -20)]), ox, oy, self.TAIL)
+            (mx, my), (bx, by) = R([(-6, -50)]) + R([(-6, -40)])
+            self.c.create_line(ox + bx, oy + by, ox + mx, oy + my, fill=self.RIM, width=2)
+            self._circle(ox + mx, oy + my, 3, fill=col, outline="")
+            for wx in (-28, 28):  # wheels rest on the ground line
+                self._wheel(ox, oy, deg, pv, wx, -11, 11)
+
+    def _gmeter(self, x0, lx, ly):
+        cx, cy, R = x0 + 75, 108, 62
+        S = R / 0.6  # 0.6 g full scale
+        self._text(x0 + 6, 4, "G-METER")
+        self._text(x0 + 6, 18, f"{lx:+.2f} / {ly:+.2f} g", self.OK, 10, True)
+        for g in (0.2, 0.4, 0.6):
+            self._circle(cx, cy, g * S, outline=self.GRID)
+        self.c.create_line(cx - R, cy, cx + R, cy, fill=self.GRID)
+        self.c.create_line(cx, cy - R, cx, cy + R, fill=self.GRID)
+        n = len(self.trail)
+        for i, (tx, ty) in enumerate(self.trail):
+            shade = int(0x2a + (0x77 - 0x2a) * i / max(n, 1))
+            self._circle(cx - ty * S, cy - tx * S, 2, fill=f"#{shade:02x}{shade + 0x30:02x}ff", outline="")
+        self._circle(cx - ly * S, cy - lx * S, 5, fill=self.OK, outline="")
+
+    def _motors(self, x0, left, right, pwm):
+        self._text(x0 + 6, 4, "MOTORS")
+        for px, v, name, duty in ((x0 + 30, left, "L", pwm[0:2]), (x0 + 90, right, "R", pwm[2:4])):
+            self.c.create_rectangle(px, 36, px + 30, 156, fill="#0b0d11", outline=self.GRID)
+            self.c.create_line(px - 4, 96, px + 34, 96, fill="#666")
+            h = abs(v) * 58
+            col = self.OK if v >= 0 else self.WARN
+            if v >= 0:
+                self.c.create_rectangle(px + 2, 96 - h, px + 28, 96, fill=col, outline="")
+            else:
+                self.c.create_rectangle(px + 2, 96, px + 28, 96 + h, fill=col, outline="")
+            self._text(px + 15, 26, name, anchor="center")
+            self._text(px + 15, 168, f"{v * 100:+.0f}%", "#e4e7ee", 10, True, "center")
+            self._text(px + 15, 184, f"{duty[0]}/{duty[1]}", self.DIM, 8, anchor="center")
+
+    # -- entry point
+    def update(self, d):
+        a, i, m = d["att"], d["imu"], d["motors"]
+        p, r = math.radians(a["pitch"]), math.radians(a["roll"])
+        # gravity-compensated linear acceleration, in g
+        lx = (i["ax"] - self.G * math.sin(p)) / self.G
+        ly = (i["ay"] - self.G * math.cos(p) * math.sin(r)) / self.G
+        self.lin[0] += 0.3 * (lx - self.lin[0])
+        self.lin[1] += 0.3 * (ly - self.lin[1])
+        self.trail.append(tuple(self.lin))
+        self.c.delete("all")
+        W = self.PW
+        self._heading(0, a["yaw"], m["left"], m["right"])
+        self._tilt(W, a["pitch"], "SIDE (pitch)", False)
+        self._tilt(2 * W, a["roll"], "REAR (roll)", True)
+        self._gmeter(3 * W, *self.lin)
+        self._motors(4 * W, m["left"], m["right"], m["pwm"])
+
+
 # ----------------------------------------------------------------------- GUI
 def run_gui():
     try:
@@ -149,7 +324,7 @@ def run_gui():
 
     root = tk.Tk()
     root.title("Rover control")
-    root.geometry("760x640")
+    root.geometry("790x800")
 
     creds = {}
     rovers = []
@@ -235,7 +410,7 @@ def run_gui():
                 ui_q.put(lambda: log("websocket connected"))
                 async for msg in ws:
                     d = json.loads(msg)
-                    ui_q.put(lambda d=d: tel_var.set(fmt_telemetry(d)))
+                    ui_q.put(lambda d=d: (tel_var.set(fmt_telemetry(d)), viz.update(d)))
         except Exception as e:  # noqa: BLE001
             ui_q.put(lambda e=e: log(f"websocket: {e}"))
         finally:
@@ -254,13 +429,15 @@ def run_gui():
     ttk.Button(lf, text="Zero yaw", command=lambda: send({"cmd": "zero_yaw"})).pack(side="left")
     ttk.Button(lf, text="Cal gyro", command=lambda: send({"cmd": "calibrate"})).pack(side="left")
     ttk.Label(root, textvariable=tel_var, font=("Menlo", 10)).pack(fill="x", padx=8)
+    viz = Viz(tk, root)
+    viz.c.pack(padx=8, pady=4)
 
     # --- drive
     df = ttk.LabelFrame(root, text="4. Drive (WASD / arrows, space = stop)")
     df.pack(fill="x", padx=8, pady=4)
     speed = tk.DoubleVar(value=0.5)
-    ttk.Label(df, text="Speed").pack(side="left", padx=4)
-    ttk.Scale(df, from_=0.1, to=1.0, variable=speed, length=200).pack(side="left", padx=4, pady=6)
+    ttk.Label(df, text="Speed").grid(row=0, column=0, padx=4)
+    ttk.Scale(df, from_=0.1, to=1.0, variable=speed, length=200).grid(row=0, column=1, padx=4, pady=6)
     pad = {"w": (1, 0), "s": (-1, 0), "a": (0, -1), "d": (0, 1)}
     btn_dir = {}
 
@@ -296,14 +473,14 @@ def run_gui():
 
     def hold_btn(text, t, s, col):
         b = ttk.Button(df, text=text, width=4)
-        b.grid(row=0, column=col + 1, padx=2)
+        b.grid(row=0, column=col + 2, padx=2)
         b.bind("<ButtonPress-1>", lambda e: btn_dir.update(t=t, s=s))
         b.bind("<ButtonRelease-1>", lambda e: btn_dir.clear())
 
     for i, (txt_, t, s) in enumerate([("L", 0, -1), ("Fwd", 1, 0), ("Back", -1, 0), ("R", 0, 1)]):
         hold_btn(txt_, t, s, i)
     ttk.Button(df, text="STOP", command=lambda: (held.clear(), btn_dir.clear(), send({"cmd": "stop"}))
-               ).grid(row=0, column=6, padx=8)
+               ).grid(row=0, column=7, padx=8)
 
     root.bind("<KeyPress>", lambda e: held.__setitem__(e.keysym, time.time()) if e.keysym != "space"
               else send({"cmd": "stop"}))
