@@ -45,7 +45,7 @@ Limitation: the PIN is the only secret on the BLE link, and 6 digits can be brut
 
 ## Interfaces
 
-- `http://192.168.4.1/` dashboard: top-down heading view, side and rear tilt, g-meter, motor bars, strip chart, touch/keyboard drive pad.
+- `http://192.168.4.1/` dashboard: top-down heading view, side and rear tilt, g-meter, motor bars, strip chart, touch/keyboard drive pad. The rover is drawn with tyres, lights and a sensor mast. Tyres in the top view fill green (forward) or amber (reverse) with wheel speed. The tilt views pivot on the tyre that stays on the ground, and turn amber past 20 degrees and red past 35.
 - `http://192.168.4.1/json` one telemetry snapshot.
 - `ws://192.168.4.1:81/` telemetry at 20 Hz; accepts JSON commands:
   - `{"cmd":"drive","left":-1..1,"right":-1..1}` (resend at least every 400 ms)
@@ -72,8 +72,10 @@ python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 python rover_tool.py scan
 python rover_tool.py pair --pin 123456 --join   # --join switches your WiFi to the rover
-python rover_tool.py watch                      # print telemetry
-python rover_tool.py gui                        # needs tkinter
+python rover_tool.py watch                      # print telemetry (--host IP[:port])
+python rover_tool.py gui                        # pair, join, drive, live panels; needs tkinter
 ```
+
+The GUI shows the same live panels as the dashboard: heading, side and rear tilt, g-meter and motor bars. Drive with WASD or the arrow keys, or hold the on-screen buttons. Space stops.
 
 macOS GUI needs `brew install python-tk@3.12`, and the terminal needs Bluetooth permission in System Settings.
