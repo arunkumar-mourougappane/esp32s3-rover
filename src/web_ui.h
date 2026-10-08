@@ -105,23 +105,40 @@ function ctxFor(id,w,h){const c=$(id);const r=c.getBoundingClientRect(),d=window
   const x=c.getContext('2d');x.setTransform(pw/w,0,0,ph/h,0,0);x.clearRect(0,0,w,h);return x}
 function col(v,a,b){return Math.abs(v)>b?'#ff5c5c':Math.abs(v)>a?'#ffb74d':'#3ddc84'}
 
-// ---------- rover silhouette (side/rear) ----------
+// ---------- rover drawing ----------
+const TIRE='#2b2f3a',RIM='#9aa3b5',BODY='#2a3b55',DECK='#3f5a85',LAMP='#ffe08a',TAIL='#ff5c5c';
+function poly(x,pts,fill,stroke){x.beginPath();pts.forEach(([a,b],i)=>i?x.lineTo(a,b):x.moveTo(a,b));x.closePath();
+  if(fill){x.fillStyle=fill;x.fill()}if(stroke){x.strokeStyle=stroke;x.lineWidth=2;x.stroke()}}
+function dot(x,cx,cy,r,fill,stroke){x.beginPath();x.arc(cx,cy,r,0,7);
+  if(fill){x.fillStyle=fill;x.fill()}if(stroke){x.strokeStyle=stroke;x.lineWidth=2;x.stroke()}}
+function mast(x,bx,tipy,c){x.strokeStyle=RIM;x.lineWidth=2;x.beginPath();x.moveTo(bx,-40);x.lineTo(bx,tipy);x.stroke();dot(x,bx,tipy,3,c)}
+
+// ---------- side / rear tilt ----------
 function drawTilt(id,angle,label,rear){
-  const x=ctxFor(id,200,150);
-  x.save();x.translate(100,100);
-  x.strokeStyle='#444';x.lineWidth=1;x.beginPath();x.moveTo(-100,0);x.lineTo(100,0);x.stroke();
-  x.rotate((rear?angle:-angle)*D2R); // side: nose-up tilts CCW; rear: left-side-up tilts CW
-  const c=col(angle,20,35);
-  x.fillStyle='#2a3b55';x.strokeStyle=c;x.lineWidth=2;
-  if(rear){x.fillRect(-38,-36,76,26);x.strokeRect(-38,-36,76,26);
-    x.fillStyle='#111';x.fillRect(-52,-26,14,26);x.fillRect(38,-26,14,26);
-    x.fillStyle=c;x.fillRect(-6,-46,12,10)}
-  else{x.fillRect(-52,-34,104,24);x.strokeRect(-52,-34,104,24);
-    x.fillStyle='#111';x.beginPath();x.arc(-34,-8,13,0,7);x.fill();x.beginPath();x.arc(34,-8,13,0,7);x.fill();
-    x.fillStyle=c;x.beginPath();x.moveTo(52,-34);x.lineTo(66,-22);x.lineTo(52,-10);x.fill()}
+  const x=ctxFor(id,200,150),c=col(angle,20,35);
+  x.strokeStyle='#555';x.lineWidth=1;x.beginPath();x.moveTo(8,125);x.lineTo(192,125);x.stroke();
+  x.strokeStyle='#3a3f4b';for(let g=14;g<192;g+=10){x.beginPath();x.moveTo(g,125);x.lineTo(g-4,130);x.stroke()}
+  x.save();x.translate(100,125);x.scale(1.2,1.2);
+  // pivot on the tyre that stays on the ground (rear tyre nose-up / right tyre left-side-up)
+  const pv=rear?(angle>0?40:-40):(angle>0?-28:28);
+  x.translate(pv,0);x.rotate((rear?angle:-angle)*D2R);x.translate(-pv,0);
+  if(rear){
+    [[-46,-34],[34,46]].forEach(([a,b])=>poly(x,[[a,-22],[b,-22],[b,0],[a,0]],TIRE,RIM));
+    poly(x,[[-32,-24],[-28,-30],[28,-30],[32,-24],[32,-16],[28,-14],[-28,-14],[-32,-16]],BODY,c);
+    poly(x,[[-20,-30],[-16,-40],[16,-40],[20,-30]],DECK,c);
+    [-26,26].forEach(sx=>poly(x,[[sx-3,-26],[sx+3,-26],[sx+3,-20],[sx-3,-20]],TAIL));
+    mast(x,0,-50,c);
+  }else{
+    poly(x,[[-46,-24],[-42,-30],[42,-30],[46,-24],[46,-16],[42,-14],[-42,-14],[-46,-16]],BODY,c);
+    poly(x,[[-24,-30],[-19,-40],[15,-40],[20,-30]],DECK,c);
+    poly(x,[[44,-26],[48,-26],[48,-20],[44,-20]],LAMP);
+    poly(x,[[-48,-26],[-44,-26],[-44,-20],[-48,-20]],TAIL);
+    mast(x,-6,-50,c);
+    [-28,28].forEach(wx=>{dot(x,wx,-11,11,TIRE,RIM);dot(x,wx,-11,3.9,RIM)});
+  }
   x.restore();
   x.fillStyle='#8a93a6';x.font='11px sans-serif';x.fillText(label,6,14);
-  x.fillStyle=col(angle,20,35);x.font='bold 16px sans-serif';x.fillText(angle.toFixed(1)+'°',6,34);
+  x.fillStyle=c;x.font='bold 16px sans-serif';x.fillText(angle.toFixed(1)+'°',6,34);
 }
 
 // ---------- top view ----------
@@ -135,14 +152,17 @@ function drawTop(yaw,l,r){
   const t0=yaw*D2R; // a left (CCW) turn moves the reference clockwise on screen
   x.fillText('0°',cx+Math.sin(t0)*127,cy-Math.cos(t0)*127+4);x.textAlign='left';
   // rover (always pointing up, the world rotates)
-  x.save();x.translate(cx,cy);
-  x.fillStyle='#2a3b55';x.strokeStyle='#4da6ff';x.lineWidth=2;
-  x.fillRect(-26,-45,52,90);x.strokeRect(-26,-45,52,90);
-  x.fillStyle='#4da6ff';x.beginPath();x.moveTo(0,-62);x.lineTo(-12,-42);x.lineTo(12,-42);x.fill();
-  [[-38,l],[26,r]].forEach(([px,v])=>{
-    x.fillStyle='#111';x.fillRect(px,-40,12,80);
-    const len=Math.abs(v)*36;x.fillStyle=v>=0?'#3ddc84':'#ffb74d';
-    if(v>=0)x.fillRect(px+2,-len,8,len);else x.fillRect(px+2,0,8,len)});
+  x.save();x.translate(cx,cy);x.scale(1.5,1.5);
+  [[-26,l],[18,r]].forEach(([px,v])=>{            // tyres, speed fill: green fwd / amber reverse
+    x.fillStyle=TIRE;x.fillRect(px,-22,8,44);x.strokeStyle=RIM;x.lineWidth=1.2;x.strokeRect(px,-22,8,44);
+    x.strokeStyle='#444b5a';x.lineWidth=1;
+    for(let ty=-18;ty<22;ty+=8){x.beginPath();x.moveTo(px+1,ty);x.lineTo(px+7,ty);x.stroke()}
+    const len=Math.abs(v)*20;x.fillStyle=v>=0?'#3ddc84':'#ffb74d';
+    if(v>=0)x.fillRect(px+2,-len,4,len);else x.fillRect(px+2,0,4,len)});
+  poly(x,[[-15,-24],[-11,-30],[11,-30],[15,-24],[15,24],[11,30],[-11,30],[-15,24]],BODY,'#4da6ff');
+  x.fillStyle=DECK;x.fillRect(-9,-14,18,32);
+  [[-9,-27,LAMP],[9,-27,LAMP],[-9,27,TAIL],[9,27,TAIL]].forEach(([a,b,f])=>dot(x,a,b,2.5,f));
+  poly(x,[[0,-46],[-6,-36],[6,-36]],'#4da6ff');   // heading arrow
   x.restore();
 }
 
