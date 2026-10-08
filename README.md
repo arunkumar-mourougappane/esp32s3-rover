@@ -1,5 +1,43 @@
 # esp32s3-rover
+
+[![CI](https://github.com/arunkumar-mourougappane/esp32s3-rover/actions/workflows/ci.yml/badge.svg)](https://github.com/arunkumar-mourougappane/esp32s3-rover/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Target](https://img.shields.io/badge/target-ESP32--S3-red)
+![Framework](https://img.shields.io/badge/framework-Arduino-00979D)
+![Build](https://img.shields.io/badge/build-PlatformIO-orange)
+![Python](https://img.shields.io/badge/host_tool-Python_3.10%2B-3776AB)
+
 An ESP32-S3 Feather TFT based rover, controlled over its own WiFi access point. WiFi credentials are handed out over Bluetooth LE after the user enters a PIN shown on the rover's screen.
+
+## Supported platforms
+
+**Firmware target**
+
+| Item | Supported |
+| --- | --- |
+| Board | Adafruit Feather ESP32-S3 TFT (`adafruit_feather_esp32s3_tft`), 4 MB flash |
+| Build system | PlatformIO, `espressif32@6.10.0` |
+| Framework | Arduino-ESP32 2.0.17 (ESP-IDF 4.4) |
+| Python for PlatformIO | 3.10 to 3.13 (3.14 is rejected by PlatformIO 6.1) |
+| IMU | MPU6050 on the STEMMA QT port (0x68 or 0x69) |
+
+Other ESP32-S3 boards are untested. They would need the pin map in `src/config.h` and the display and NeoPixel pins changed.
+
+**Host tool (`tools/rover_tool.py`)**
+
+| OS | Scan / pair | Auto-join rover WiFi | GUI |
+| --- | --- | --- | --- |
+| macOS | yes (tested) | yes, via `networksetup` | yes, needs `python-tk` |
+| Linux (BlueZ) | yes, untested | yes, via `nmcli` | yes, needs `python3-tk` |
+| Windows | yes, untested | no, join manually | yes, untested |
+
+CI compiles the host tool on Python 3.10 to 3.13. It was run by hand on Python 3.12 only. The BLE and WebSocket paths need hardware, so CI does not exercise them.
+
+**Dashboard**: any browser with WebSocket and canvas support. Tested on desktop Chrome.
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) builds the firmware with PlatformIO on every push to `main` and every pull request, and uploads `firmware.bin` and `partitions.bin` as a build artifact. A second job compiles the host tool on Python 3.10 to 3.13.
 
 ## Hardware
 
