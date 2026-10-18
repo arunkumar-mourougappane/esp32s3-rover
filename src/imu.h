@@ -12,10 +12,13 @@ struct Data {
   float temp;           // C
 };
 
-bool begin();           // init + gyro bias calibration (~1 s, keep still)
+// A FreeRTOS task (core 1) samples at 200 Hz and owns the I2C bus, including
+// the optional MAX17048 fuel gauge. All accessors are safe from any task.
+bool begin();           // init + gyro bias calibration (~1 s, keep still), starts the task
 bool ok();
-void update();          // call every loop; samples at 100 Hz internally
-void calibrate();       // re-run gyro bias calibration (~1 s, keep still)
-void zeroYaw();
-const Data& data();
+void calibrate();       // request gyro bias recalibration (~1 s, keep still)
+void zeroYaw();         // request yaw reset
+Data data();            // consistent snapshot
+bool hasFuelGauge();
+float batteryVolts();   // NaN if no gauge or read failed
 }  // namespace imu

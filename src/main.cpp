@@ -27,7 +27,6 @@ uint8_t gWsClients = 0;
 uint32_t gSeq = 0;
 uint32_t gLastCmdMs = 0;
 bool gFailsafe = false;
-bool gFuelGauge = false;  // MAX17048 at 0x36 found
 
 // ---------------------------------------------------------------- helpers
 float round1(float v) { return roundf(v * 10.0f) / 10.0f; }
@@ -39,17 +38,6 @@ String makePassword() {
   String p;
   for (int i = 0; i < 12; i++) p += alphabet[esp_random() % (sizeof(alphabet) - 1)];
   return p;
-}
-
-// MAX17048 VCELL register: 78.125 uV per LSB. Returns NaN if absent.
-float readBatteryVolts() {
-  if (!gFuelGauge) return NAN;
-  Wire.beginTransmission(0x36);
-  Wire.write(0x02);
-  if (Wire.endTransmission(false) != 0) return NAN;
-  if (Wire.requestFrom((uint8_t)0x36, (uint8_t)2) != 2) return NAN;
-  uint16_t raw = (Wire.read() << 8) | Wire.read();
-  return raw * 78.125e-6f;
 }
 
 void buildTelemetry(JsonDocument& doc) {
@@ -66,7 +54,7 @@ void buildTelemetry(JsonDocument& doc) {
   JsonArray pwm = m["pwm"].to<JsonArray>();
   for (uint8_t c = 0; c < 4; c++) pwm.add(motors::duty(c));
   if (imu::ok()) doc["temp"] = round1(d.temp); else doc["temp"] = nullptr;
-  float vb = readBatteryVolts();
+  float vb = imu::batteryVolts();
   if (isnan(vb)) doc["vbat"] = nullptr; else doc["vbat"] = round2(vb);
   doc["failsafe"] = gFailsafe;
   doc["clients"] = gWsClients;
@@ -173,7 +161,7 @@ void tftUpdate() {
     tft.print("IMU NOT FOUND              ");
   tft.setCursor(4, 110);
   tft.printf("L:%+4.0f%% R:%+4.0f%%", motors::left() * 100, motors::right() * 100);
-  float vb = readBatteryVolts();
+  float vb = imu::batteryVolts();
   tft.setCursor(150, 110);
   if (isnan(vb)) tft.print("Bat --  "); else tft.printf("%.2fV  ", vb);
   tft.setCursor(4, 122);
@@ -209,11 +197,9 @@ void setup() {
 
   Wire.begin();
   Wire.setClock(400000);
-  Wire.beginTransmission(0x36);
-  gFuelGauge = Wire.endTransmission() == 0;
   bool imuOk = imu::begin();
   Serial.println(imuOk ? "MPU6050 ready" : "WARNING: MPU6050 not found");
-  Serial.println(gFuelGauge ? "MAX17048 fuel gauge found" : "No fuel gauge");
+  Serial.println(imu::hasFuelGauge() ? "MAX17048 fuel gauge found" : "No fuel gauge");
 
   // WiFi AP with a per-device random password, persisted in NVS.
   uint8_t mac[6];
@@ -260,7 +246,6 @@ void loop() {
   server.handleClient();
   webSocket.loop();
   pairing::loop();
-  imu::update();
 
   uint32_t now = millis();
 
