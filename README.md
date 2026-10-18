@@ -89,9 +89,13 @@ Limitation: the PIN is the only secret on the BLE link, and 6 digits can be brut
   - `{"cmd":"drive","left":-1..1,"right":-1..1}` (resend at least every 400 ms)
   - `{"cmd":"stop"}`, `{"cmd":"zero_yaw"}`, `{"cmd":"calibrate"}` (keep the rover still, about 1 s)
 
-Telemetry: `imu` (accel m/s^2, gyro deg/s), `att` (pitch, roll, yaw in degrees), `motors` (left/right -1..1 plus the four raw PWM duties), `temp`, `vbat`, `failsafe`, `clients`, `uptime_s`, `heap`, `pairing`.
+Telemetry: `imu` (accel m/s^2, gyro deg/s), `att` (fused pitch, roll, yaw in degrees, plus `acc_pitch`/`acc_roll` from the accelerometer alone), `filt` (`trust` 0..1 and `still`), `motors` (left/right -1..1 plus the four raw PWM duties), `temp`, `vbat`, `failsafe`, `clients`, `uptime_s`, `heap`, `pairing`.
 
 IMU convention: chip X forward, Y left, Z up. Pitch is nose-up positive, roll is left-side-up positive, yaw is counter-clockwise positive. Yaw comes from the gyro only, so it is relative and drifts. If the IMU is mounted differently, change the axes in `src/imu.cpp`.
+
+## IMU filtering
+
+A FreeRTOS task on core 1 samples the MPU6050 at 200 Hz (hardware low-pass at 44 Hz) and runs a complementary filter. The accelerometer's correction fades out when |a| moves away from 1 g (acceleration, braking, bumps), so driving does not tilt the estimate. When the motors are idle and the gyro is quiet, the gyro bias tracks slowly and yaw is frozen (`filt.still`). Yaw still drifts while moving; there is no magnetometer. Thresholds are constants at the top of `src/imu.cpp` and have not been tuned on hardware.
 
 ## Build and flash
 
