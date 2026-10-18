@@ -10,6 +10,7 @@ struct Data {
   float gx, gy, gz;     // deg/s, bias removed
   float pitch, roll, yaw;  // deg
   float temp;           // C
+  float trust;          // 0..1, how much the accel is believed (1 = at rest)
 };
 
 // A FreeRTOS task (core 1) samples at 200 Hz and owns the I2C bus, including

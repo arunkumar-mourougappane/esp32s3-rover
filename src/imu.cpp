@@ -6,6 +6,12 @@
 namespace {
 constexpr uint32_t SAMPLE_MS = 5;      // 200 Hz
 constexpr float ALPHA = 0.98f;         // gyro weight in the complementary filter
+constexpr float G = 9.80665f;
+// Accel is trusted fully while |a| is within TRUST_FULL_G of 1 g and not at
+// all beyond TRUST_ZERO_G; in between the correction fades linearly. Hard
+// acceleration, braking and bumps push |a| away from 1 g.
+constexpr float TRUST_FULL_G = 0.05f;
+constexpr float TRUST_ZERO_G = 0.25f;
 constexpr uint8_t FUEL_ADDR = 0x36;    // MAX17048
 constexpr uint32_t BATTERY_PERIOD_MS = 1000;
 
@@ -88,8 +94,15 @@ void step() {
   float accPitch, accRoll;
   accelAngles(a, accPitch, accRoll);
   // Rotation about +Y pitches the nose down, so nose-up rate is -gy.
-  gState.pitch = ALPHA * (gState.pitch - gState.gy * dt) + (1 - ALPHA) * accPitch;
-  gState.roll  = ALPHA * (gState.roll + gState.gx * dt) + (1 - ALPHA) * accRoll;
+  float mag = sqrtf(gState.ax * gState.ax + gState.ay * gState.ay + gState.az * gState.az) / G;
+  float trust = (TRUST_ZERO_G - fabsf(mag - 1.0f)) / (TRUST_ZERO_G - TRUST_FULL_G);
+  trust = constrain(trust, 0.0f, 1.0f);
+  gState.trust = trust;
+  float k = (1 - ALPHA) * trust;  // accel correction gain
+  float pitchPred = gState.pitch - gState.gy * dt;
+  float rollPred  = gState.roll + gState.gx * dt;
+  gState.pitch = pitchPred + k * (accPitch - pitchPred);
+  gState.roll  = rollPred + k * (accRoll - rollPred);
 
   gState.yaw += gState.gz * dt;
   wrap180(gState.yaw);
