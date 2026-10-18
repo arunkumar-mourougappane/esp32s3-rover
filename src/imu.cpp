@@ -81,6 +81,8 @@ void doCalibrate() {
   // seed attitude from gravity
   read(a, g, t);
   accelAngles(a, gState.pitch, gState.roll);
+  gState.accPitch = gState.pitch;
+  gState.accRoll = gState.roll;
   gState.yaw = 0;
   gLastUs = micros();
 }
@@ -104,6 +106,8 @@ void step() {
 
   float accPitch, accRoll;
   accelAngles(a, accPitch, accRoll);
+  gState.accPitch = accPitch;
+  gState.accRoll = accRoll;
   // Rotation about +Y pitches the nose down, so nose-up rate is -gy.
   float mag = sqrtf(gState.ax * gState.ax + gState.ay * gState.ay + gState.az * gState.az) / G;
   float trust = (TRUST_ZERO_G - fabsf(mag - 1.0f)) / (TRUST_ZERO_G - TRUST_FULL_G);

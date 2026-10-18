@@ -8,7 +8,8 @@ namespace imu {
 struct Data {
   float ax, ay, az;     // m/s^2, includes gravity
   float gx, gy, gz;     // deg/s, bias removed
-  float pitch, roll, yaw;  // deg
+  float pitch, roll, yaw;  // deg, fused
+  float accPitch, accRoll; // deg, from the accelerometer alone (unfiltered reference)
   float temp;           // C
   float trust;          // 0..1, how much the accel is believed (1 = at rest)
   bool still;           // stationary: gyro bias is tracking, yaw is frozen

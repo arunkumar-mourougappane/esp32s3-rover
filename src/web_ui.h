@@ -70,6 +70,7 @@ input[type=range]{width:100%}
     <div class="row"><span>Uptime</span><b id="up">--</b></div>
     <div class="row"><span>WS clients</span><b id="cl">--</b></div>
     <div class="row"><span>Frames / rate</span><b id="fr">--</b></div>
+    <div class="row"><span>Filter</span><b id="filt">--</b></div>
   </div>
   <div class="card wide"><h2>YAW RATE &middot; PITCH &middot; ROLL (10 s)</h2>
     <canvas id="chart" width="900" height="160"></canvas>
@@ -80,7 +81,7 @@ input[type=range]{width:100%}
 const $=id=>document.getElementById(id);
 const D2R=Math.PI/180, G=9.80665;
 let ws, last=null, frames=0, rate=0, rateT=Date.now(), lastMsg=0;
-const hist={t:[],gz:[],pitch:[],roll:[]}; const trail=[];
+const hist={t:[],gz:[],pitch:[],roll:[],apitch:[],aroll:[]}; const trail=[];
 let linf={x:0,y:0};
 
 // ---------- WebSocket ----------
@@ -196,11 +197,12 @@ function drawChart(){
   const t1=hist.t[n-1],span=10000;
   x.strokeStyle='#2a2f3a';x.beginPath();x.moveTo(0,80);x.lineTo(900,80);x.stroke();
   x.fillStyle='#8a93a6';x.font='10px sans-serif';x.fillText('±80° / ±80°/s',4,10);
-  [['gz','#ffb74d','yaw rate'],['pitch','#4da6ff','pitch'],['roll','#3ddc84','roll']].forEach(([k,c,name],i)=>{
-    x.strokeStyle=c;x.lineWidth=1.5;x.beginPath();
+  [['gz','#ffb74d','yaw rate'],['pitch','#4da6ff','pitch'],['roll','#3ddc84','roll'],
+   ['apitch','#4da6ff55','pitch (accel only)'],['aroll','#3ddc8455','roll (accel only)']].forEach(([k,c,name],i)=>{
+    x.strokeStyle=c;x.lineWidth=k[0]=='a'?1:1.5;x.beginPath();
     for(let j=0;j<n;j++){const px=900-(t1-hist.t[j])/span*900,py=80-Math.max(-80,Math.min(80,hist[k][j]));
       j?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();
-    x.fillStyle=c;x.fillText(name,820,12+i*12)});
+    x.fillStyle=c;x.textAlign='right';x.fillText(name,894,12+i*12);x.textAlign='left'});
 }
 
 // ---------- render telemetry ----------
@@ -215,6 +217,7 @@ function render(d){
   $('heap').textContent=(d.heap/1024).toFixed(0)+' KB';$('up').textContent=fmtUp(d.uptime_s);$('cl').textContent=d.clients;
   $('pl').textContent=m.pwm[0]+' / '+m.pwm[1];$('pr').textContent=m.pwm[2]+' / '+m.pwm[3];
   $('fs').textContent=d.failsafe?'TRIPPED (no cmd)':'ok';$('fs').style.color=d.failsafe?'#ff5c5c':'';
+  $('filt').textContent=d.filt.still?'still (bias tracking)':'accel trust '+(d.filt.trust*100).toFixed(0)+'%';
   $('pair').textContent=d.pairing.open?'PAIRING '+d.pairing.secs:'PAIR closed';
   $('pair').className='badge '+(d.pairing.open?'on':'neutral');
   $('tiltwarn').textContent=(Math.abs(a.pitch)>35||Math.abs(a.roll)>35)?'⚠ TIP RISK':'';
@@ -225,7 +228,7 @@ function render(d){
   linf.x+=0.3*(lx-linf.x);linf.y+=0.3*(ly-linf.y);
   trail.push({x:linf.x,y:linf.y});if(trail.length>40)trail.shift();
   $('gtxt').textContent=linf.x.toFixed(2)+' / '+linf.y.toFixed(2)+' g';
-  const t=Date.now();hist.t.push(t);hist.gz.push(i.gz);hist.pitch.push(a.pitch);hist.roll.push(a.roll);
+  const t=Date.now();hist.t.push(t);hist.gz.push(i.gz);hist.pitch.push(a.pitch);hist.roll.push(a.roll);hist.apitch.push(a.acc_pitch);hist.aroll.push(a.acc_roll);
   while(hist.t.length&&t-hist.t[0]>10000)for(const k in hist)hist[k].shift();
   drawTop(a.yaw,m.left,m.right);drawTilt('side',a.pitch,'SIDE (pitch)',false);drawTilt('rear',a.roll,'REAR (roll)',true);
   drawG(linf.x,linf.y);drawMotors(m.left,m.right);drawChart();

@@ -48,6 +48,10 @@ void buildTelemetry(JsonDocument& doc) {
   i["gx"] = round1(d.gx); i["gy"] = round1(d.gy); i["gz"] = round1(d.gz);
   JsonObject a = doc["att"].to<JsonObject>();
   a["pitch"] = round1(d.pitch); a["roll"] = round1(d.roll); a["yaw"] = round1(d.yaw);
+  a["acc_pitch"] = round1(d.accPitch); a["acc_roll"] = round1(d.accRoll);
+  JsonObject f = doc["filt"].to<JsonObject>();
+  f["trust"] = round2(d.trust);
+  f["still"] = d.still;
   JsonObject m = doc["motors"].to<JsonObject>();
   m["left"] = round2(motors::left());
   m["right"] = round2(motors::right());
