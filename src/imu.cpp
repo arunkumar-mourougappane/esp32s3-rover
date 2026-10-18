@@ -12,6 +12,13 @@ constexpr float G = 9.80665f;
 // acceleration, braking and bumps push |a| away from 1 g.
 constexpr float TRUST_FULL_G = 0.05f;
 constexpr float TRUST_ZERO_G = 0.25f;
+// Stationary: motors idle for IDLE_HOLD_MS (lets the chassis settle), every
+// bias-removed rate under GYRO_QUIET_DPS and |a| within TRUST_FULL_G of 1 g,
+// all held for STILL_MS. Then the gyro bias tracks slowly and yaw is frozen.
+constexpr uint32_t IDLE_HOLD_MS = 1000;
+constexpr uint32_t STILL_MS = 500;
+constexpr float GYRO_QUIET_DPS = 1.0f;
+constexpr float BIAS_RATE = 0.002f;  // per sample; ~2.5 s time constant at 200 Hz
 constexpr uint8_t FUEL_ADDR = 0x36;    // MAX17048
 constexpr uint32_t BATTERY_PERIOD_MS = 1000;
 
@@ -29,6 +36,10 @@ float gVbat = NAN;
 SemaphoreHandle_t gMutex = nullptr;
 volatile bool gCalReq = false;
 volatile bool gZeroYawReq = false;
+volatile bool gMotorsIdle = false;
+uint32_t gIdleSinceMs = 0;
+uint32_t gQuietSinceMs = 0;
+bool gQuiet = false;
 
 void wrap180(float& a) {
   while (a > 180.0f) a -= 360.0f;
@@ -104,8 +115,25 @@ void step() {
   gState.pitch = pitchPred + k * (accPitch - pitchPred);
   gState.roll  = rollPred + k * (accRoll - rollPred);
 
-  gState.yaw += gState.gz * dt;
-  wrap180(gState.yaw);
+  uint32_t ms = millis();
+  if (!gMotorsIdle) gIdleSinceMs = ms;
+  bool quiet = gMotorsIdle && ms - gIdleSinceMs >= IDLE_HOLD_MS && trust >= 1.0f &&
+               fabsf(gState.gx) < GYRO_QUIET_DPS && fabsf(gState.gy) < GYRO_QUIET_DPS &&
+               fabsf(gState.gz) < GYRO_QUIET_DPS;
+  if (quiet && !gQuiet) gQuietSinceMs = ms;
+  gQuiet = quiet;
+  bool still = quiet && ms - gQuietSinceMs >= STILL_MS;
+  gState.still = still;
+
+  if (still) {
+    // The rate we see while stationary is the residual bias.
+    gBiasX += BIAS_RATE * gState.gx;
+    gBiasY += BIAS_RATE * gState.gy;
+    gBiasZ += BIAS_RATE * gState.gz;
+  } else {
+    gState.yaw += gState.gz * dt;
+    wrap180(gState.yaw);
+  }
 }
 
 void task(void*) {
@@ -163,6 +191,7 @@ bool ok() { return gOk; }
 bool hasFuelGauge() { return gFuel; }
 
 void calibrate() { if (gOk) gCalReq = true; }
+void setMotorsIdle(bool idle) { gMotorsIdle = idle; }
 void zeroYaw() { if (gOk) gZeroYawReq = true; }
 
 Data data() {

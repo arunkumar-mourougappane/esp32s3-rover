@@ -11,6 +11,7 @@ struct Data {
   float pitch, roll, yaw;  // deg
   float temp;           // C
   float trust;          // 0..1, how much the accel is believed (1 = at rest)
+  bool still;           // stationary: gyro bias is tracking, yaw is frozen
 };
 
 // A FreeRTOS task (core 1) samples at 200 Hz and owns the I2C bus, including
@@ -19,6 +20,7 @@ bool begin();           // init + gyro bias calibration (~1 s, keep still), star
 bool ok();
 void calibrate();       // request gyro bias recalibration (~1 s, keep still)
 void zeroYaw();         // request yaw reset
+void setMotorsIdle(bool idle);  // call each loop; gates stationary detection
 Data data();            // consistent snapshot
 bool hasFuelGauge();
 float batteryVolts();   // NaN if no gauge or read failed

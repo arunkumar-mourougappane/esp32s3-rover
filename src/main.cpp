@@ -251,6 +251,7 @@ void loop() {
 
   // Drive failsafe: no command recently -> stop.
   bool moving = motors::left() != 0 || motors::right() != 0;
+  imu::setMotorsIdle(!moving);
   if (moving && now - gLastCmdMs > DRIVE_TIMEOUT_MS) {
     motors::stop();
     gFailsafe = true;
