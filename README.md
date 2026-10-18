@@ -85,11 +85,9 @@ Limitation: the PIN is the only secret on the BLE link, and 6 digits can be brut
 
 - `http://192.168.4.1/` dashboard: top-down heading view, side and rear tilt, g-meter, motor bars, strip chart, touch/keyboard drive pad. The rover is drawn with tyres, lights and a sensor mast. Tyres in the top view fill green (forward) or amber (reverse) with wheel speed. The tilt views pivot on the tyre that stays on the ground, and turn amber past 20 degrees and red past 35.
 - `http://192.168.4.1/json` one telemetry snapshot.
-- `ws://192.168.4.1:81/` telemetry at 20 Hz; accepts JSON commands:
-  - `{"cmd":"drive","left":-1..1,"right":-1..1}` (resend at least every 400 ms)
-  - `{"cmd":"stop"}`, `{"cmd":"zero_yaw"}`, `{"cmd":"calibrate"}` (keep the rover still, about 1 s)
+- `ws://192.168.4.1:81/` telemetry at 20 Hz; accepts JSON commands `drive`, `stop`, `zero_yaw` and `calibrate`. `drive` must be resent at least every 400 ms or the failsafe stops the motors.
 
-Telemetry: `imu` (accel m/s^2, gyro deg/s), `att` (fused pitch, roll, yaw in degrees, plus `acc_pitch`/`acc_roll` from the accelerometer alone), `filt` (`trust` 0..1 and `still`), `motors` (left/right -1..1 plus the four raw PWM duties), `temp`, `vbat`, `failsafe`, `clients`, `uptime_s`, `heap`, `pairing`.
+The full message reference (every telemetry field with units, command payloads, failsafe behaviour and client examples) is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 IMU convention: chip X forward, Y left, Z up. Pitch is nose-up positive, roll is left-side-up positive, yaw is counter-clockwise positive. Yaw comes from the gyro only, so it is relative and drifts. If the IMU is mounted differently, change the axes in `src/imu.cpp`.
 
